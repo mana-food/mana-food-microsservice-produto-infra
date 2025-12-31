@@ -20,7 +20,6 @@ permissions:
   id-token: write
 
 env:
-  ECR_REPOSITORY_GATEWAY: mana-food-gateway
   ECR_REPOSITORY_API: mana-food-api
   AWS_REGION: us-east-1
 
@@ -79,7 +78,6 @@ jobs:
           
           echo "aurora-endpoint=$AURORA_ENDPOINT" >> $GITHUB_OUTPUT
           echo "aurora-secret-arn=$AURORA_SECRET_ARN" >> $GITHUB_OUTPUT
-          fi
           
           echo "✅ Aurora Endpoint: $AURORA_ENDPOINT"
           echo "🔐 Aurora Secret ARN: $AURORA_SECRET_ARN"
@@ -214,10 +212,10 @@ jobs:
   # ===================================================================
 
   deploy-apps:
-    name: 'Deploy Gateway & API .NET 9 no EKS'
+    name: 'Deploy API .NET 9 no EKS'
     runs-on: ubuntu-latest
     needs: [terraform-foundation, terraform-compute]
-    if: needs.build-apps.outputs.build-success == 'true' && needs.terraform-compute.outputs.eks-ready == 'success'
+    if: needs.terraform-compute.outputs.eks-ready == 'success'
 
     steps:
       - name: Configure AWS
@@ -244,14 +242,10 @@ jobs:
       - name: Deploy aplicações .NET 9 no EKS
         run: |
           # Configurações
-          GATEWAY_IMAGE="${{ needs.build-apps.outputs.gateway-image }}"
-          API_IMAGE="${{ needs.build-apps.outputs.api-image }}"
           AURORA_ENDPOINT="${{ needs.terraform-foundation.outputs.aurora-endpoint }}"
           AURORA_SECRET_ARN="${{ needs.terraform-foundation.outputs.aurora-secret-arn }}"
           
           echo "🚀 Deployando ManaFood .NET 9 no EKS com AWS Secrets Manager..."
-          echo "🌐 Gateway .NET 9: $GATEWAY_IMAGE"
-          echo "📱 API .NET 9: $API_IMAGE"
           echo "🗄️ Aurora RDS: $AURORA_ENDPOINT"
           echo "🔐 Aurora Secret: $AURORA_SECRET_ARN"
           echo "📋 API .NET 9 aplicará migrations automaticamente"
@@ -278,7 +272,6 @@ jobs:
             ASPNETCORE_ENVIRONMENT: "Production"
             ASPNETCORE_URLS: "http://+:8080"
             DATABASE_HOST: "$AURORA_ENDPOINT"
-            API_BASE_URL: "http://mana-food-api-service:8080"
           ---
           # API .NET 9 Deployment (aplica migrations automaticamente)
           apiVersion: apps/v1
@@ -298,7 +291,7 @@ jobs:
               spec:
                 containers:
                 - name: api
-                  image: $API_IMAGE
+                  image: YOUR_ECR_REGISTRY/mana-food-api:latest
                   ports:
                   - containerPort: 8080
                   env:
@@ -343,64 +336,7 @@ jobs:
                     timeoutSeconds: 5
                     failureThreshold: 3
           ---
-          # Gateway .NET 9 Deployment
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: mana-food-gateway
-            namespace: default
-          spec:
-            replicas: 2
-            selector:
-              matchLabels:
-                app: mana-food-gateway
-            template:
-              metadata:
-                labels:
-                  app: mana-food-gateway
-              spec:
-                containers:
-                - name: gateway
-                  image: $GATEWAY_IMAGE
-                  ports:
-                  - containerPort: 8080
-                  env: []
-                  envFrom:
-                  - configMapRef:
-                      name: mana-food-config
-                  resources:
-                    requests:
-                      memory: "128Mi"
-                      cpu: "100m"
-                    limits:
-                      memory: "256Mi"
-                      cpu: "250m"
-                  startupProbe:
-                    httpGet:
-                      path: /healthz
-                      port: 8080
-                    initialDelaySeconds: 5
-                    periodSeconds: 3
-                    timeoutSeconds: 3
-                    failureThreshold: 10
-                  readinessProbe:
-                    httpGet:
-                      path: /healthz
-                      port: 8080
-                    initialDelaySeconds: 15
-                    periodSeconds: 5
-                    timeoutSeconds: 3
-                    failureThreshold: 2
-                  livenessProbe:
-                    httpGet:
-                      path: /healthz
-                      port: 8080
-                    initialDelaySeconds: 30
-                    periodSeconds: 10
-                    timeoutSeconds: 3
-                    failureThreshold: 3
-          ---
-          # API Service (interno)
+          # API Service (público com LoadBalancer)
           apiVersion: v1
           kind: Service
           metadata:
@@ -409,20 +345,6 @@ jobs:
           spec:
             selector:
               app: mana-food-api
-            ports:
-            - port: 8080
-              targetPort: 8080
-            type: ClusterIP
-          ---
-          # Gateway Service (público)
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: mana-food-gateway-service
-            namespace: default
-          spec:
-            selector:
-              app: mana-food-gateway
             ports:
             - port: 80
               targetPort: 8080
@@ -433,13 +355,9 @@ jobs:
         run: |
           echo "🔍 Verificando status dos pods..."
           kubectl get pods -l app=mana-food-api -o wide
-          kubectl get pods -l app=mana-food-gateway -o wide
           
           echo "⏳ Aguardando API aplicar migrations com credenciais do Secrets Manager..."
           kubectl rollout status deployment/mana-food-api --timeout=300s
-          
-          echo "⏳ Aguardando Gateway..."
-          kubectl rollout status deployment/mana-food-gateway --timeout=120s
           
           echo "📊 Status final dos pods:"
           kubectl get pods -o wide
@@ -451,16 +369,19 @@ jobs:
           kubectl logs deployment/mana-food-api --tail=30 || echo "Logs ainda não disponíveis"
           
           echo ""
-          echo "🌐 Aguardando Load Balancer do Gateway..."
+          echo "🌐 Aguardando Load Balancer da API..."
           
           timeout 300 bash -c '
             while true; do
-              LB_HOSTNAME=$(kubectl get svc mana-food-gateway-service -o jsonpath="{.status.loadBalancer.ingress[0].hostname}" 2>/dev/null)
+              LB_HOSTNAME=$(kubectl get svc mana-food-api-service -o jsonpath="{.status.loadBalancer.ingress[0].hostname}" 2>/dev/null)
               if [ -n "$LB_HOSTNAME" ] && [ "$LB_HOSTNAME" != "null" ]; then
-                echo "🔗 ManaFood Gateway: http://$LB_HOSTNAME"
+                echo "🔗 ManaFood API: http://$LB_HOSTNAME"
                 echo ""
                 echo "✅ ARQUITETURA MANA FOOD DEPLOYADA COM AWS SECRETS MANAGER!"
+                echo "🏗️ Fluxo: Internet → API .NET 9 → Aurora RDS"
+                echo "🔐 API .NET 9 obtém credenciais via AWS Secrets Manager"
                 echo "📋 Aplicação .NET 9 aplicou migrations automaticamente"
+                echo "⚡ API .NET 9 conectada ao Aurora RDS"
                 break
               fi
               echo "⏰ Aguardando Load Balancer..."
@@ -508,8 +429,8 @@ jobs:
         run: |
           echo "🧹 Limpando aplicações do EKS..."
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name mana-food-eks || true
-          kubectl delete deployment mana-food-api mana-food-gateway || true
-          kubectl delete service mana-food-api-service mana-food-gateway-service || true
+          kubectl delete deployment mana-food-api || true
+          kubectl delete service mana-food-api-service || true
           kubectl delete configmap mana-food-config || true
           kubectl delete secret mana-food-secrets || true
         continue-on-error: true
@@ -523,7 +444,6 @@ jobs:
       - name: Cleanup ECR Images
         run: |
           echo "🗑️ Limpando imagens ECR..."
-          aws ecr delete-repository --repository-name mana-food-gateway --force --region ${{ env.AWS_REGION }} || true
           aws ecr delete-repository --repository-name mana-food-api --force --region ${{ env.AWS_REGION }} || true
         continue-on-error: true
 
@@ -536,10 +456,9 @@ jobs:
     steps:
       - name: Generate report
         run: |
-          echo "🎯 MANA FOOD - ARQUITETURA OBRIGATÓRIA COM AWS SECRETS MANAGER"
+          echo "🎯 MANA FOOD - INFRAESTRUTURA COM VPC + AURORA + EKS"
           echo "=============================================================="
           echo "Foundation (VPC+Aurora): ${{ needs.terraform-foundation.result }}"
-          echo "Build Apps: ${{ needs.build-apps.result }}"
           echo "Aurora Wait: ${{ needs.wait-aurora.result }}"
           echo "Compute (EKS): ${{ needs.terraform-compute.result }}"
           echo "Apps Deploy: ${{ needs.deploy-apps.result }}"
@@ -552,30 +471,30 @@ jobs:
             echo "  • Infraestrutura AWS destruída"
             echo "  • Imagens ECR limpas"
           elif [ "${{ needs.deploy-apps.result }}" = "success" ]; then
-            echo "✅ MANA FOOD DEPLOYADO SEGUINDO REGRAS OBRIGATÓRIAS!"
+            echo "✅ MANA FOOD DEPLOYADO COM SUCESSO!"
             echo ""
             echo "🏗️ ARQUITETURA IMPLEMENTADA:"
             echo "  🗄️ Aurora MySQL RDS - Banco central único"
-            echo "  🌐 Gateway .NET 9 - Proxy (EKS)"
             echo "  📱 API .NET 9 - Business + Migrations automáticas (EKS)"
             echo "  🔐 AWS Secrets Manager - Credenciais seguras"
             echo ""
+            echo "🔄 FLUXO:"
+            echo "  Cliente → API .NET 9 → Aurora RDS"
             echo ""
-            echo "✅ REGRAS SEGUIDAS:"
-            echo "  • Aurora RDS como fonte única"
+            echo "✅ COMPONENTES:"
+            echo "  • VPC com subnets públicas e privadas"
+            echo "  • Aurora RDS como fonte única de dados"
+            echo "  • EKS cluster com aplicação .NET 9"
             echo "  • AWS Secrets Manager para credenciais"
             echo "  • Aplicação aplica migrations na inicialização"
-            echo "  • App no EKS"
-            echo "  • Todos conectam ao mesmo Aurora MySQL"
+            echo "  • API exposta via LoadBalancer público"
             echo "  • NÃO usou connection strings hardcoded"
-            echo "  • NÃO usou setup via Docker externo"
             echo ""
-            echo "⏱️ TIMELINE OTIMIZADA:"
-            echo "  Phase 1: Build Apps (3-5 min) | Foundation Deploy (parallel)"
+            echo "⏱️ TIMELINE:"
+            echo "  Phase 1: Foundation Deploy (VPC + Aurora)"
             echo "  Phase 2: Aurora Wait (15-20 min)"
             echo "  Phase 3: EKS Deploy (8-12 min)"
             echo "  Phase 4: App Deploy (2-3 min)"
-            echo "  🎯 Total: ~25-30 min (vs 35-45 min anterior)"
           else
             echo "❌ Falha no deployment"
           fi
