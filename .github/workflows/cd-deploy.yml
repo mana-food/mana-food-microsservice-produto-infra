@@ -3,13 +3,10 @@ name: Deploy Mana Food Product - Aurora RDS + Secrets Manager
 on:
   workflow_dispatch:
     inputs:
-      deploy_mode:
-        description: "Modo de deploy"
-        type: choice
-        options:
-          - "full-deploy"
-          - "infra-only"
-        default: "full-deploy"
+      image:
+        description: 'Imagem Docker a ser deployada'
+        required: true
+        type: string
   push:
     branches:
       - main
@@ -377,7 +374,7 @@ jobs:
               if [ -n "$LB_HOSTNAME" ] && [ "$LB_HOSTNAME" != "null" ]; then
                 echo "🔗 ManaFood API: http://$LB_HOSTNAME"
                 echo ""
-                echo "✅ ARQUITETURA MANA FOOD DEPLOYADA COM AWS SECRETS MANAGER!"
+                echo "✅ ARQUITETURA MANA FOOD PRODUCT DEPLOYADA COM AWS SECRETS MANAGER!"
                 echo "🏗️ Fluxo: Internet → API .NET 9 → Aurora RDS"
                 echo "🔐 API .NET 9 obtém credenciais via AWS Secrets Manager"
                 echo "📋 Aplicação .NET 9 aplicou migrations automaticamente"
@@ -456,7 +453,7 @@ jobs:
     steps:
       - name: Generate report
         run: |
-          echo "🎯 MANA FOOD - INFRAESTRUTURA COM VPC + AURORA + EKS"
+          echo "🎯 MANA FOOD PRODUCT - INFRAESTRUTURA COM VPC + AURORA + EKS"
           echo "=============================================================="
           echo "Foundation (VPC+Aurora): ${{ needs.terraform-foundation.result }}"
           echo "Aurora Wait: ${{ needs.wait-aurora.result }}"
@@ -471,7 +468,7 @@ jobs:
             echo "  • Infraestrutura AWS destruída"
             echo "  • Imagens ECR limpas"
           elif [ "${{ needs.deploy-apps.result }}" = "success" ]; then
-            echo "✅ MANA FOOD DEPLOYADO COM SUCESSO!"
+            echo "✅ MANA FOOD PRODUCT DEPLOYADO COM SUCESSO!"
             echo ""
             echo "🏗️ ARQUITETURA IMPLEMENTADA:"
             echo "  🗄️ Aurora MySQL RDS - Banco central único"
