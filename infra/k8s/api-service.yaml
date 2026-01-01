@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mana-food-product-service
+  namespace: default
+  labels:
+    app: mana-food-product-app
+spec:
+  selector:
+    app: mana-food-product-app
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  type: LoadBalancer
