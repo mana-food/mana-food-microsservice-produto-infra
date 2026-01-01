@@ -20,7 +20,7 @@ permissions:
   id-token: write
 
 env:
-  ECR_REPOSITORY_API: mana-food-api
+  ECR_REPOSITORY_API: mana-food-product-api
   AWS_REGION: us-east-1
 
 jobs:
@@ -277,21 +277,21 @@ jobs:
           apiVersion: apps/v1
           kind: Deployment
           metadata:
-            name: mana-food-api
+            name: mana-food-product-api
             namespace: default
           spec:
             replicas: 2
             selector:
               matchLabels:
-                app: mana-food-api
+                app: mana-food-product-api
             template:
               metadata:
                 labels:
-                  app: mana-food-api
+                  app: mana-food-product-api
               spec:
                 containers:
                 - name: api
-                  image: YOUR_ECR_REGISTRY/mana-food-api:latest
+                  image: YOUR_ECR_REGISTRY/mana-food-product-api:latest
                   ports:
                   - containerPort: 8080
                   env:
@@ -340,11 +340,11 @@ jobs:
           apiVersion: v1
           kind: Service
           metadata:
-            name: mana-food-api-service
+            name: mana-food-product-api-service
             namespace: default
           spec:
             selector:
-              app: mana-food-api
+              app: mana-food-product-api
             ports:
             - port: 80
               targetPort: 8080
@@ -354,10 +354,10 @@ jobs:
       - name: Monitor deployment progress
         run: |
           echo "🔍 Verificando status dos pods..."
-          kubectl get pods -l app=mana-food-api -o wide
+          kubectl get pods -l app=mana-food-product-api -o wide
           
           echo "⏳ Aguardando API aplicar migrations com credenciais do Secrets Manager..."
-          kubectl rollout status deployment/mana-food-api --timeout=300s
+          kubectl rollout status deployment/mana-food-product-api --timeout=300s
           
           echo "📊 Status final dos pods:"
           kubectl get pods -o wide
@@ -366,14 +366,14 @@ jobs:
       - name: Verificar arquitetura deployada
         run: |
           echo "🔍 Logs da API (migrations com Secrets Manager):"
-          kubectl logs deployment/mana-food-api --tail=30 || echo "Logs ainda não disponíveis"
+          kubectl logs deployment/mana-food-product-api --tail=30 || echo "Logs ainda não disponíveis"
           
           echo ""
           echo "🌐 Aguardando Load Balancer da API..."
           
           timeout 300 bash -c '
             while true; do
-              LB_HOSTNAME=$(kubectl get svc mana-food-api-service -o jsonpath="{.status.loadBalancer.ingress[0].hostname}" 2>/dev/null)
+              LB_HOSTNAME=$(kubectl get svc mana-food-product-api-service -o jsonpath="{.status.loadBalancer.ingress[0].hostname}" 2>/dev/null)
               if [ -n "$LB_HOSTNAME" ] && [ "$LB_HOSTNAME" != "null" ]; then
                 echo "🔗 ManaFood API: http://$LB_HOSTNAME"
                 echo ""
@@ -429,8 +429,8 @@ jobs:
         run: |
           echo "🧹 Limpando aplicações do EKS..."
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name mana-food-eks || true
-          kubectl delete deployment mana-food-api || true
-          kubectl delete service mana-food-api-service || true
+          kubectl delete deployment mana-food-product-api || true
+          kubectl delete service mana-food-product-api-service || true
           kubectl delete configmap mana-food-product-config || true
           kubectl delete secret mana-food-product-secrets || true
         continue-on-error: true
@@ -444,7 +444,7 @@ jobs:
       - name: Cleanup ECR Images
         run: |
           echo "🗑️ Limpando imagens ECR..."
-          aws ecr delete-repository --repository-name mana-food-api --force --region ${{ env.AWS_REGION }} || true
+          aws ecr delete-repository --repository-name mana-food-product-api --force --region ${{ env.AWS_REGION }} || true
         continue-on-error: true
 
   status:
