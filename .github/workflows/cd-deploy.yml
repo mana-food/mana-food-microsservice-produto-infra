@@ -256,7 +256,7 @@ jobs:
           apiVersion: v1
           kind: Secret
           metadata:
-            name: mana-food-secrets
+            name: mana-food-product-secrets
             namespace: default
           type: Opaque
           stringData:
@@ -266,7 +266,7 @@ jobs:
           apiVersion: v1
           kind: ConfigMap
           metadata:
-            name: mana-food-config
+            name: mana-food-product-config
             namespace: default
           data:
             ASPNETCORE_ENVIRONMENT: "Production"
@@ -299,11 +299,11 @@ jobs:
                   - name: AURORA_SECRET_ARN
                     valueFrom:
                       secretKeyRef:
-                        name: mana-food-secrets
+                        name: mana-food-product-secrets
                         key: aurora-secret-arn
                   envFrom:
                   - configMapRef:
-                      name: mana-food-config
+                      name: mana-food-product-config
                   resources:
                     requests:
                       memory: "256Mi"
@@ -431,8 +431,8 @@ jobs:
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name mana-food-eks || true
           kubectl delete deployment mana-food-api || true
           kubectl delete service mana-food-api-service || true
-          kubectl delete configmap mana-food-config || true
-          kubectl delete secret mana-food-secrets || true
+          kubectl delete configmap mana-food-product-config || true
+          kubectl delete secret mana-food-product-secrets || true
         continue-on-error: true
 
       - name: Terraform Destroy
